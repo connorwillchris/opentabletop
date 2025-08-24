@@ -104,6 +104,8 @@ function lovr.draw(pass)
 end]]
 
 --[[ CUSTOM HAND RIG CODE ]]
+hands = {}
+
 local function animateHand(device, skeleton, model, map)
     model:resetNodeTransforms()
 
@@ -141,7 +143,6 @@ local function animateHand(device, skeleton, model, map)
 end
 
 function lovr.load()
-    hands = {}
     for i, hand in ipairs({ 'left', 'right' }) do
         hands[hand] = {
             model = lovr.graphics.newModel("assets/meshes/" .. hand .. '.glb'),
