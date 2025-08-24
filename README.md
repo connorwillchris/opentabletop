@@ -1,3 +1,4 @@
 # Open Tabletop
 
-## Open source tabletop sim for VR
+## Open source tabletop simulator for VR
+

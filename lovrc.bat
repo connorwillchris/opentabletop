@@ -1,1 +1,1 @@
-lovr\lovr.exe --console %*
+lovr\lovr.exe --console .
