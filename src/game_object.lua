@@ -22,5 +22,6 @@ GAME.GameObject = {
     end]]
 };
 
---local a = GAME.GameObject.new(0, 1, 2);
+--[[
 local a = GAME.GameObject.new(0, 1, 2);
+]]

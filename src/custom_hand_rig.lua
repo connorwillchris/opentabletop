@@ -62,9 +62,9 @@ end
 
 function lovr.load()
     hands = {}
-    for i, hand in ipairs({ 'assets/meshes/left', 'assets/meshes/right' }) do
+    for i, hand in ipairs({ 'left', 'right' }) do
         hands[hand] = {
-            model = lovr.graphics.newModel(hand .. '.glb'),
+            model = lovr.graphics.newModel("assets/meshes/" .. hand .. '.glb'),
             skeleton = nil
         }
     end
@@ -109,7 +109,7 @@ function lovr.draw(pass)
     lovr.graphics.setBackgroundColor(0x202224)
 
     if not hands.left.skeleton and not hands.right.skeleton then
-        pass:text('No skelly :(', 0, 1, -1, .1)
+        pass:text('No skelly :(', 0, 1, -1, 0.1)
         return
     end
 
