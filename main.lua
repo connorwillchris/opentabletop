@@ -4,13 +4,11 @@
     MIT LICENSE
 ]]
 
--- MODULES
-
 GAME = {};
 GAME.version = "0.1.0-alpha";
 
 -- MODULES HERE
-GAME.GameObject = require("src/game_object").GameObject;
+GAME.GameObject = require("src/game_object"); --.GameObject;
 
 -- local vars
 local motion = {

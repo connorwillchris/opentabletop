@@ -1,9 +1,9 @@
 --[[
     DEFAUT COPY-PASTE FOR THE OPENTABLETOP GAME
 ]]
-local M = {};
+--local M = {};
 
-M.GameObject = {
+return {
     x = 0,
     y = 0,
     z = 0,
@@ -26,4 +26,4 @@ M.GameObject = {
 --[[
 local a = GAME.GameObject.new(0, 1, 2);
 ]]
-return M;
+--return M;
