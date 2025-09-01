@@ -4,7 +4,13 @@
     MIT LICENSE
 ]]
 
+-- MODULES
+
 GAME = {};
+GAME.version = "0.1.0-alpha";
+
+-- MODULES HERE
+GAME.GameObject = require("src/game_object").GameObject;
 
 -- local vars
 local motion = {
@@ -12,6 +18,10 @@ local motion = {
     left_anchor_vr = lovr.math.newVec3(),
     right_anchor_vr = lovr.math.newVec3(),
 };
+
+-- my custom vars
+local table = nil;
+
 local palette = {
     0x0d2b45,
     0x203c56,
@@ -25,9 +35,13 @@ local palette = {
 
 lovr.graphics.setBackgroundColor(palette[1]);
 
+function lovr.load()
+    table = lovr.graphics.newModel("assets/meshes/table.glb");
+end
+
 --[[ rendering is done here ]]
 function lovr.draw(pass)
-    pass:transform(mat4(motion.pose):invert())
+    pass:transform(mat4(motion.pose):invert());
 
     -- Render hands
     for _, hand in ipairs(lovr.headset.getHands()) do
@@ -35,11 +49,13 @@ function lovr.draw(pass)
         -- Whenever pose of hand or head is used, need to account for VR movement
         local poseRW = mat4(lovr.headset.getPose(hand));
         local poseVR = mat4(motion.pose):mul(poseRW);
-        if lovr.headset.isDown(hand, 'grip') then
+
+        --[[ for the test background
+        if lovr.headset.isDown(hand, "grip") then
             pass:setColor(palette[6]);
         else
             pass:setColor(palette[8]);
-        end
+        end]]
         poseVR:scale(0.02);
         pass:sphere(poseVR);
     end
@@ -48,9 +64,9 @@ function lovr.draw(pass)
         An example scene
 
         TODO: REMOVE THIS AND REPLACE WITH MY OWN CONTENT
-    ]]
+    
     local t = lovr.timer.getTime();
-    pass:setCullMode('back');
+    pass:setCullMode("back");
     local step = 0.5;
     for x = -5, 5, step do
         for z = -5, 5, step do
@@ -58,24 +74,29 @@ function lovr.draw(pass)
             pass:setColor(palette[2 + math.floor(y * 10) % (#palette - 1)]);
             pass:sphere(x, y, z, step / 2);
         end
-    end
+    end]]
+
+    --pass:roundrect(vec3(0, 0, 0), vec3(10, 10, 1), lovr.math.quat(0, 0, 0, 0, true), 0, 0);
+
+    pass:setColor(palette[2]);
+    pass:draw(table);
 end
 
 function lovr.update(dt)
-    --[[
-        HANDS AND GRABBING THE WORLD
-    ]]
-    local left_vr  = vec3(motion.pose:mul(lovr.headset.getPosition('hand/left')));
-    local right_vr = vec3(motion.pose:mul(lovr.headset.getPosition('hand/right')));
-    if lovr.headset.wasPressed('hand/left', 'grip') then
+    --[[ HANDS AND GRABBING THE WORLD ]]
+    local left_vr  = vec3(motion.pose:mul(lovr.headset.getPosition("hand/left")));
+    local right_vr = vec3(motion.pose:mul(lovr.headset.getPosition("hand/right")));
+
+    if lovr.headset.wasPressed("hand/left", "grip") then
         motion.left_anchor_vr:set(left_vr);
     end
-    if lovr.headset.wasPressed('hand/right', 'grip') then
+    if lovr.headset.wasPressed("hand/right", "grip") then
         motion.right_anchor_vr:set(right_vr);
     end
 
-    if lovr.headset.isDown('hand/left',  'grip')
-        and lovr.headset.isDown('hand/right', 'grip') then
+    if lovr.headset.isDown("hand/left",  "grip")
+        and lovr.headset.isDown("hand/right", "grip")
+    then
         local x, y, z, scale, _, _, angle, ax, ay, az = motion.pose:unpack();
 
         -- Scale: get the ratio of distances between anchors over current controllers distance
@@ -110,7 +131,7 @@ function lovr.update(dt)
 
         motion.pose:rotate(offset_rotation, 0,1,0); -- apply rotation
         -- pose & anchor reset
-        if lovr.headset.isDown('hand/right', 'trigger') then
+        if lovr.headset.isDown("hand/right", "trigger") then
             motion.pose:set();
             motion.left_anchor_vr:set(left_vr);
             motion.right_anchor_vr:set(right_vr);
