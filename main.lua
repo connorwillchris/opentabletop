@@ -1,87 +1,98 @@
---[[
-    OPENTABLETOP
-
-    MIT LICENSE
-]]
-
+-- MODULES HERE
 GAME = {};
 GAME.version = "0.1.0-alpha";
-
--- MODULES HERE
 GAME.GameObject = require("src/game_object"); --.GameObject;
 
--- local vars
-local motion = {
+motion = {
     pose = lovr.math.newMat4(0,0,0, 1,1,1, 0, 0,1,0),
     left_anchor_vr = lovr.math.newVec3(),
     right_anchor_vr = lovr.math.newVec3(),
 };
 
--- my custom vars
-local table = nil;
+local function animateHand(device, skeleton, model, map)
+  model:resetNodeTransforms()
 
-local palette = {
-    0x0d2b45,
-    0x203c56,
-    0x544e68,
-    0x8d697a,
-    0xd08159,
-    0xffaa5e,
-    0xffd4a3,
-    0xffecd6,
-};
+  if not skeleton then return end
 
-lovr.graphics.setBackgroundColor(palette[1]);
+  -- Get offset of wrist node in the model
+  local modelFromWrist = mat4(model:getNodeTransform(map[2]))
+  local wristFromModel = mat4(modelFromWrist):invert()
 
-function lovr.load()
-    table = lovr.graphics.newModel("assets/meshes/table.glb");
+  -- Get offset of wrist joint in the world
+  local x, y, z, _, angle, ax, ay, az = unpack(skeleton[2])
+  local worldFromWrist = mat4(x, y, z, angle, ax, ay, az)
+  local wristFromWorld = mat4(worldFromWrist):invert()
+
+  -- Combine the two into a matrix that will transform the
+  -- world-space hand joints into local node poses for the model
+  local modelFromWorld = modelFromWrist * wristFromWorld
+
+  -- Transform the nodes
+  for index, node in pairs(map) do
+    local x, y, z, _, angle, ax, ay, az = unpack(skeleton[index])
+
+    local jointWorld = mat4(x, y, z, angle, ax, ay, az)
+    local jointModel = modelFromWorld * jointWorld
+
+    model:setNodeTransform(node, jointModel)
+  end
+
+  -- This offsets the root node so the wrist poses line up when the
+  -- model is drawn at the hand pose.  Instead of doing this, you
+  -- could just draw the model at worldFromWrist * wristFromModel
+  local worldFromGrip = mat4(lovr.headset.getPose(device))
+  local gripFromWorld = mat4(worldFromGrip):invert()
+  model:setNodeTransform(model:getRootNode(), gripFromWorld * worldFromWrist * wristFromModel)
 end
 
---[[ rendering is done here ]]
-function lovr.draw(pass)
-    pass:transform(mat4(motion.pose):invert());
+--lovr.graphics.setBackgroundColor(palette[1]);
 
-    -- Render hands
-    for _, hand in ipairs(lovr.headset.getHands()) do
+function lovr.load()
+    table = lovr.graphics.newModel("./assets/meshes/table.glb");
 
-        -- Whenever pose of hand or head is used, need to account for VR movement
-        local poseRW = mat4(lovr.headset.getPose(hand));
-        local poseVR = mat4(motion.pose):mul(poseRW);
-
-        --[[ for the test background
-        if lovr.headset.isDown(hand, "grip") then
-            pass:setColor(palette[6]);
-        else
-            pass:setColor(palette[8]);
-        end]]
-        poseVR:scale(0.02);
-        pass:sphere(poseVR);
+    hands = {}
+    for _, hand in ipairs({ 'left', 'right' }) do
+            hands[hand] = {
+            model = lovr.graphics.newModel("assets/meshes/" .. hand .. '.glb'),
+            skeleton = nil
+        }
     end
 
-    --[[
-        An example scene
+  -- Maps skeleton joint index to node names in the model
+    map = {
+        [2] = 'wrist',
+        [3] = 'thumb-metacarpal',
+        [4] = 'thumb-phalanx-proximal',
+        [5] = 'thumb-phalanx-distal',
 
-        TODO: REMOVE THIS AND REPLACE WITH MY OWN CONTENT
-    
-    local t = lovr.timer.getTime();
-    pass:setCullMode("back");
-    local step = 0.5;
-    for x = -5, 5, step do
-        for z = -5, 5, step do
-            local y = 0.5 * math.sin(t * 0.2 + (x * 0.5)^2 + (z * 0.5)^2);
-            pass:setColor(palette[2 + math.floor(y * 10) % (#palette - 1)]);
-            pass:sphere(x, y, z, step / 2);
-        end
-    end]]
+        [7] = 'index-finger-metacarpal',
+        [8] = 'index-finger-phalanx-proximal',
+        [9] = 'index-finger-phalanx-intermediate',
+        [10] = 'index-finger-phalanx-distal',
 
-    --pass:roundrect(vec3(0, 0, 0), vec3(10, 10, 1), lovr.math.quat(0, 0, 0, 0, true), 0, 0);
+        [12] = 'middle-finger-metacarpal',
+        [13] = 'middle-finger-phalanx-proximal',
+        [14] = 'middle-finger-phalanx-intermediate',
+        [15] = 'middle-finger-phalanx-distal',
 
-    pass:setColor(palette[2]);
-    pass:draw(table);
+        [17] = 'ring-finger-metacarpal',
+        [18] = 'ring-finger-phalanx-proximal',
+        [19] = 'ring-finger-phalanx-intermediate',
+        [20] = 'ring-finger-phalanx-distal',
+
+        [22] = 'pinky-finger-metacarpal',
+        [23] = 'pinky-finger-phalanx-proximal',
+        [24] = 'pinky-finger-phalanx-intermediate',
+        [25] = 'pinky-finger-phalanx-distal'
+    }
 end
 
 function lovr.update(dt)
-    --[[ HANDS AND GRABBING THE WORLD ]]
+    for device, hand in pairs(hands) do
+        hand.skeleton = lovr.headset.getSkeleton(device)
+        animateHand(device, hand.skeleton, hand.model, map)
+    end
+
     local left_vr  = vec3(motion.pose:mul(lovr.headset.getPosition("hand/left")));
     local right_vr = vec3(motion.pose:mul(lovr.headset.getPosition("hand/right")));
 
@@ -135,4 +146,39 @@ function lovr.update(dt)
             motion.right_anchor_vr:set(right_vr);
         end
     end
+
+end
+
+function lovr.draw(pass)
+    lovr.graphics.setBackgroundColor(0x202224)
+
+    --[[if not hands.left.skeleton and not hands.right.skeleton then
+        pass:text('No skelly :(', 0, 1, -1, .1)
+        return
+    end]]
+
+    for device, hand in pairs(hands) do
+        if hand.skeleton then
+            -- Debug dots for joints
+            pass:setColor(0x8000ff)
+            pass:setDepthWrite(false)
+            for i = 1, #hand.skeleton do
+                local x, y, z, _, angle, ax, ay, az = unpack(hand.skeleton[i])
+                pass:sphere(mat4(x, y, z, angle, ax, ay, az):scale(.003))
+            end
+            pass:setDepthWrite(true)
+
+            -- Draw the (procedurally animated) wireframe hand model
+            local worldFromGrip = mat4(lovr.headset.getPose(device))
+            pass:setColor(0xffffff)
+            pass:setWireframe(true)
+            pass:draw(hand.model, worldFromGrip)
+            pass:setWireframe(false)
+        end
+    end
+
+    pass:transform(mat4(motion.pose):invert());
+
+    pass:setColor(0x203c56);
+    pass:draw(table);
 end
