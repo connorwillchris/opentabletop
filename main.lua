@@ -1,64 +1,124 @@
 -- MODULES HERE
-GAME = {};
-GAME.version = "0.1.0-alpha";
-GAME.GameObject = require("src/game_object"); --.GameObject;
+GAME = {}
+GAME.version = "0.1.0"
+GAME.GameObject = require("src/game_object")
+
+local function animate_hand(device, skeleton, model, map)
+    model:resetNodeTransforms()
+
+    if not skeleton then return end
+
+    -- Get offset of wrist node in the model
+    local modelFromWrist = mat4(model:getNodeTransform(map[2]))
+    local wristFromModel = mat4(modelFromWrist):invert()
+
+    -- Get offset of wrist joint in the world
+    local x, y, z, _, angle, ax, ay, az = unpack(skeleton[2])
+    local worldFromWrist = mat4(x, y, z, angle, ax, ay, az)
+    local wristFromWorld = mat4(worldFromWrist):invert()
+
+    -- Combine the two into a matrix that will transform the
+    -- world-space hand joints into local node poses for the model
+    local modelFromWorld = modelFromWrist * wristFromWorld
+
+    -- Transform the nodes
+    for index, node in pairs(map) do
+        local x, y, z, _, angle, ax, ay, az = unpack(skeleton[index])
+
+        local jointWorld = mat4(x, y, z, angle, ax, ay, az)
+        local jointModel = modelFromWorld * jointWorld
+
+        model:setNodeTransform(node, jointModel)
+    end
+
+    -- This offsets the root node so the wrist poses line up when the
+    -- model is drawn at the hand pose.  Instead of doing this, you
+    -- could just draw the model at worldFromWrist * wristFromModel
+    local worldFromGrip = mat4(lovr.headset.getPose(device))
+    local gripFromWorld = mat4(worldFromGrip):invert()
+    model:setNodeTransform(model:getRootNode(), gripFromWorld * worldFromWrist * wristFromModel)
+end
+
+local function update_hands()
+    for device, hand in pairs(hands) do
+        hand.skeleton = lovr.headset.getSkeleton(device)
+        animate_hand(device, hand.skeleton, hand.model, map)
+    end
+
+    local left_vr  = vec3(motion.pose:mul(lovr.headset.getPosition("hand/left")))
+    local right_vr = vec3(motion.pose:mul(lovr.headset.getPosition("hand/right")))
+
+    if lovr.headset.wasPressed("hand/left", "grip") then
+        motion.left_anchor_vr:set(left_vr)
+    end
+    if lovr.headset.wasPressed("hand/right", "grip") then
+        motion.right_anchor_vr:set(right_vr)
+    end
+
+    if lovr.headset.isDown("hand/left",  "grip")
+        and lovr.headset.isDown("hand/right", "grip")
+    then
+        local x, y, z, scale, _, _, angle, ax, ay, az = motion.pose:unpack()
+
+        -- Scale: get the ratio of distances between anchors over current controllers distance
+        local offset_scale = motion.left_anchor_vr:distance(motion.right_anchor_vr) / left_vr:distance(right_vr)
+        offset_scale = 1 + (offset_scale - 1)
+        scale = scale * offset_scale
+
+        -- the change of scale must also affect the viewpoint location
+        x, y, z = x * offset_scale, y * offset_scale, z * offset_scale
+
+        -- Position: the mid-point of anchors is compared to midpoint of current controllers position
+        local midpoint_anchor     = vec3(motion.left_anchor_vr):lerp(motion.right_anchor_vr, 0.5)
+        local midpoint_controller = vec3(left_vr):lerp(right_vr, 0.5)
+        local offset_position     = vec3(midpoint_anchor):sub(midpoint_controller)
+        x, y, z = x + offset_position.x, y + offset_position.y, z + offset_position.z
+
+        motion.pose:set(x, y, z, scale, scale, scale, angle, ax, ay, az)  -- apply transition and scaling
+        -- Rotation: get angle between current controllers and anchors in XZ
+        local l_to_r_anchor = vec3(motion.right_anchor_vr):sub(motion.left_anchor_vr)
+        local l_to_r_controller = vec3(right_vr):sub(left_vr)
+        local sign = 1
+
+        if vec3(l_to_r_controller):cross(vec3(l_to_r_anchor)):dot(vec3(0, 1, 0)) < 0 then
+            sign = -1
+        end
+
+        l_to_r_anchor = l_to_r_anchor.xz:normalize()
+        l_to_r_controller = l_to_r_controller.xz:normalize()
+        local cos_angle = l_to_r_controller:dot(l_to_r_anchor)
+        cos_angle = math.max(-1, math.min(1, cos_angle))
+        local offset_rotation = math.acos(cos_angle) * sign
+
+        motion.pose:rotate(offset_rotation, 0,1,0) -- apply rotation
+        -- pose & anchor reset
+        if lovr.headset.isDown("hand/right", "trigger") then
+            motion.pose:set()
+            motion.left_anchor_vr:set(left_vr)
+            motion.right_anchor_vr:set(right_vr)
+        end
+    end
+end
 
 motion = {
     pose = lovr.math.newMat4(0,0,0, 1,1,1, 0, 0,1,0),
     left_anchor_vr = lovr.math.newVec3(),
     right_anchor_vr = lovr.math.newVec3(),
-};
-
-local function animateHand(device, skeleton, model, map)
-  model:resetNodeTransforms()
-
-  if not skeleton then return end
-
-  -- Get offset of wrist node in the model
-  local modelFromWrist = mat4(model:getNodeTransform(map[2]))
-  local wristFromModel = mat4(modelFromWrist):invert()
-
-  -- Get offset of wrist joint in the world
-  local x, y, z, _, angle, ax, ay, az = unpack(skeleton[2])
-  local worldFromWrist = mat4(x, y, z, angle, ax, ay, az)
-  local wristFromWorld = mat4(worldFromWrist):invert()
-
-  -- Combine the two into a matrix that will transform the
-  -- world-space hand joints into local node poses for the model
-  local modelFromWorld = modelFromWrist * wristFromWorld
-
-  -- Transform the nodes
-  for index, node in pairs(map) do
-    local x, y, z, _, angle, ax, ay, az = unpack(skeleton[index])
-
-    local jointWorld = mat4(x, y, z, angle, ax, ay, az)
-    local jointModel = modelFromWorld * jointWorld
-
-    model:setNodeTransform(node, jointModel)
-  end
-
-  -- This offsets the root node so the wrist poses line up when the
-  -- model is drawn at the hand pose.  Instead of doing this, you
-  -- could just draw the model at worldFromWrist * wristFromModel
-  local worldFromGrip = mat4(lovr.headset.getPose(device))
-  local gripFromWorld = mat4(worldFromGrip):invert()
-  model:setNodeTransform(model:getRootNode(), gripFromWorld * worldFromWrist * wristFromModel)
-end
-
---lovr.graphics.setBackgroundColor(palette[1]);
+}
 
 function lovr.load()
-    table = lovr.graphics.newModel("./assets/meshes/table.glb");
+    lovr.graphics.setBackgroundColor(0.5, 0.5, 0.5)
+    --table = lovr.graphics.newModel("./assets/meshes/table.glb")
 
     hands = {}
     for _, hand in ipairs({ 'left', 'right' }) do
             hands[hand] = {
             model = lovr.graphics.newModel("assets/meshes/" .. hand .. '.glb'),
-            skeleton = nil
+            skeleton = nil,
         }
     end
 
-  -- Maps skeleton joint index to node names in the model
+    -- Maps skeleton joint index to node names in the model
     map = {
         [2] = 'wrist',
         [3] = 'thumb-metacarpal',
@@ -83,74 +143,19 @@ function lovr.load()
         [22] = 'pinky-finger-metacarpal',
         [23] = 'pinky-finger-phalanx-proximal',
         [24] = 'pinky-finger-phalanx-intermediate',
-        [25] = 'pinky-finger-phalanx-distal'
+        [25] = 'pinky-finger-phalanx-distal',
     }
 end
 
 function lovr.update(dt)
-    for device, hand in pairs(hands) do
-        hand.skeleton = lovr.headset.getSkeleton(device)
-        animateHand(device, hand.skeleton, hand.model, map)
-    end
-
-    local left_vr  = vec3(motion.pose:mul(lovr.headset.getPosition("hand/left")));
-    local right_vr = vec3(motion.pose:mul(lovr.headset.getPosition("hand/right")));
-
-    if lovr.headset.wasPressed("hand/left", "grip") then
-        motion.left_anchor_vr:set(left_vr);
-    end
-    if lovr.headset.wasPressed("hand/right", "grip") then
-        motion.right_anchor_vr:set(right_vr);
-    end
-
-    if lovr.headset.isDown("hand/left",  "grip")
-        and lovr.headset.isDown("hand/right", "grip")
-    then
-        local x, y, z, scale, _, _, angle, ax, ay, az = motion.pose:unpack();
-
-        -- Scale: get the ratio of distances between anchors over current controllers distance
-        local offset_scale = motion.left_anchor_vr:distance(motion.right_anchor_vr) / left_vr:distance(right_vr);
-        offset_scale = 1 + (offset_scale - 1);
-        scale = scale * offset_scale;
-
-        -- the change of scale must also affect the viewpoint location
-        x, y, z = x * offset_scale, y * offset_scale, z * offset_scale;
-
-        -- Position: the mid-point of anchors is compared to midpoint of current controllers position
-        local midpoint_anchor     = vec3(motion.left_anchor_vr):lerp(motion.right_anchor_vr, 0.5);
-        local midpoint_controller = vec3(left_vr):lerp(right_vr, 0.5);
-        local offset_position     = vec3(midpoint_anchor):sub(midpoint_controller);
-        x, y, z = x + offset_position.x, y + offset_position.y, z + offset_position.z;
-
-        motion.pose:set(x, y, z, scale, scale, scale, angle, ax, ay, az);  -- apply transition and scaling
-        -- Rotation: get angle between current controllers and anchors in XZ
-        local l_to_r_anchor = vec3(motion.right_anchor_vr):sub(motion.left_anchor_vr);
-        local l_to_r_controller = vec3(right_vr):sub(left_vr);
-        local sign = 1;
-
-        if vec3(l_to_r_controller):cross(vec3(l_to_r_anchor)):dot(vec3(0, 1, 0)) < 0 then
-            sign = -1;
-        end
-
-        l_to_r_anchor = l_to_r_anchor.xz:normalize();
-        l_to_r_controller = l_to_r_controller.xz:normalize();
-        local cos_angle = l_to_r_controller:dot(l_to_r_anchor);
-        cos_angle = math.max(-1, math.min(1, cos_angle));
-        local offset_rotation = math.acos(cos_angle) * sign;
-
-        motion.pose:rotate(offset_rotation, 0,1,0); -- apply rotation
-        -- pose & anchor reset
-        if lovr.headset.isDown("hand/right", "trigger") then
-            motion.pose:set();
-            motion.left_anchor_vr:set(left_vr);
-            motion.right_anchor_vr:set(right_vr);
-        end
-    end
-
+    update_hands()
 end
 
 function lovr.draw(pass)
-    lovr.graphics.setBackgroundColor(0x202224)
+    pass:setColor(0.1, 0.1, 0.12)
+    pass:plane(0, 0, 0, 100, 100, -math.pi / 2, 1, 0, 0)
+    pass:setColor(0.2, 0.2, 0.2)
+    pass:plane(0, 1e-5, 0, 100, 100, -math.pi / 2, 1, 0, 0, "line", 100, 100)
 
     --[[if not hands.left.skeleton and not hands.right.skeleton then
         pass:text('No skelly :(', 0, 1, -1, .1)
@@ -159,26 +164,17 @@ function lovr.draw(pass)
 
     for device, hand in pairs(hands) do
         if hand.skeleton then
-            -- Debug dots for joints
-            pass:setColor(0x8000ff)
-            pass:setDepthWrite(false)
-            for i = 1, #hand.skeleton do
-                local x, y, z, _, angle, ax, ay, az = unpack(hand.skeleton[i])
-                pass:sphere(mat4(x, y, z, angle, ax, ay, az):scale(.003))
-            end
-            pass:setDepthWrite(true)
-
             -- Draw the (procedurally animated) wireframe hand model
             local worldFromGrip = mat4(lovr.headset.getPose(device))
             pass:setColor(0xffffff)
-            pass:setWireframe(true)
+            --pass:setWireframe(true)
             pass:draw(hand.model, worldFromGrip)
             pass:setWireframe(false)
         end
     end
 
-    pass:transform(mat4(motion.pose):invert());
+    pass:transform(mat4(motion.pose):invert())
 
-    pass:setColor(0x203c56);
-    pass:draw(table);
+    pass:setColor(0x203c56)
+    --pass:draw(table)
 end

@@ -1,1 +1,1 @@
-lovr\lovr.exe --console .
+"C:\Program Files\lovr\lovr.exe" --console .

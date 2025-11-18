@@ -9,13 +9,13 @@ return {
     z = 0,
 
     new = function(self, x, y, z)
-        local obj = {};
-        setmetatable(obj, self);
-        self.__index = self;
-        obj.x = x;
-        obj.y = y;
-        obj.z = z;
-        return obj;
+        local obj = {}
+        setmetatable(obj, self)
+        self.__index = self
+        obj.x = x
+        obj.y = y
+        obj.z = z
+        return obj
     end,
 
     --[[print = function(self)
